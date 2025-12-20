@@ -53,3 +53,17 @@ data = [
 ]
 
 anchors = pd.DataFrame(data)
+
+
+def mapping_table(x, y, z):#输入一组坐标值，返回对应的游戏点位
+    clostest=[float('inf'), None, None]
+    for row in anchors.itertuples(index=False):
+        anchor_x = row.x
+        anchor_y = row.y
+        dist_square = (anchor_x-x)**2+(anchor_y-y)**2
+        if clostest[0] > dist_square:
+            clostest = [dist_square, row.name, row.z]
+        elif clostest[0] == dist_square:
+            if abs(row.z-z) <= abs(clostest[2]-z):#距离相同时按z值接近程度判断
+                clostest = [dist_square, row.name, row.z]
+    return clostest[1]
