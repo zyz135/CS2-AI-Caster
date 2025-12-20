@@ -227,7 +227,7 @@ def batch_generate_commentary():
         "CHEGrenadeProjectile":3
     }
 
-    for idx, item in enumerate(grenade_data[:20]):
+    for idx, item in enumerate(grenade_data):
         type_cn = item["投掷物类型"]
         print(f"\r正在生成 {idx + 1}/{total} 条（{type_cn}）...", end="")
 
