@@ -1,0 +1,24 @@
+from awpy import Demo
+from config import DEMO_PATH
+
+# 1. 解析 Demo
+print(f"🔍 正在检查文件: {DEMO_PATH}")
+dem = Demo(path=DEMO_PATH, verbose=False)
+dem.parse()
+
+# 2. 获取 ticks 表
+df = dem.ticks.to_pandas()
+
+# 3. 打印关键信息
+print("\n" + "="*40)
+print("1. 所有列名 (Columns):")
+print(list(df.columns))
+
+print("\n2. 假如有一列叫 'team' 或 'side'，它的值长什么样？")
+# 尝试寻找可能的阵营列并打印前几个值，方便我判断是 "T" 还是 "TERRORIST"
+possible_cols = ['side', 'team', 'team_name', 'side_name']
+for col in possible_cols:
+    if col in df.columns:
+        print(f"   发现列 [{col}]: {df[col].unique()}")
+
+print("="*40)
