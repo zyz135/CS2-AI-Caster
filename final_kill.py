@@ -246,6 +246,23 @@ def generate_commentary_texts(qwen_client, event_info, kill_context, verbose=Fal
     system_prompt = """你是专业的CS2比赛解说员，请生成简洁、中性的解说文本。
 
 ## 核心要求：
+*******最重要的**********:weapon_map = {
+        'glock': '格洛克', 'ak47': 'AK', 'm4a1': 'M4', 
+        'm4a1_silencer': 'M4', 'awp': '大狙', 'usp_silencer': 'USP',
+        'deagle': '沙鹰', 'elite': '双枪', 'famas': '法玛斯',
+        'galilar': '咖喱', 'mac10': 'MAC-10', 'mp9': 'MP9',
+        'ump45': '车王', 'p90': 'P90', 'mp7': 'MP7',
+        'p250': 'P250', 'tec9': 'TEC-nine', 'fiveseven': '57',
+        'hegrenade': '雷', 'inferno': '燃烧弹', 'flashbang': '闪光',
+        'smokegrenade': '烟', 'molotov': '燃烧瓶', 'incgrenade': '燃烧瓶',
+        'knife': '刀', 'taser': '电击枪', 'nova': '新星',
+        'xm1014': '连喷', 'mag7': 'MAG-7', 'sawedoff': '截短霰弹枪',
+        'bizon': '野牛', 'negev': '内格夫', 'm249': 'M249',
+        'hkp2000': 'P2000', 'usp': 'USP', 'cz75a': 'CZ75',
+        'revolver': 'R8', 'mp5sd': 'MP5-SD', 'aug': 'AUG',
+        'sg556': 'SG 553', 'scar20': '连狙', 'g3sg1': '连狙',
+        'ssg08': 'SSG 08'
+    }武器名称替换用这个规则，左侧是数据中的武器名称，右侧是解说中使用的名称。***************
 1. **简洁直接**：只说必要信息，不说"本场第一杀"、"非爆头"等多余描述
 2. **补枪识别**：只在确实有补枪时才说"补枪"，不说"无补枪"、"暂无补枪风险"
 3. **爆头说明**：只有爆头时才说"爆头"，普通击杀不说
@@ -291,10 +308,9 @@ def generate_commentary_texts(qwen_client, event_info, kill_context, verbose=Fal
 6. 助攻信息自然地融入句子中
 
 ## 示例：
-正常击杀：s1mple在A包点击杀了device
-爆头击杀：ZywOo爆头击杀了flameZ
-补枪击杀：device补枪击杀了s1mple
-双杀：device双杀，击杀了s1mple和ZywOo
+正常击杀：s1mple在A包点使用大狙击杀了device
+爆头击杀：ZywOo使用ak在长箱爆头击杀了flameZ
+补枪击杀：device使用m4z在B包点补枪击杀了s1mple
 带助攻：device在chopper助攻下击杀了s1mple
 
 ## 输出JSON格式："""
@@ -753,4 +769,3 @@ def set_api_key(key):
     global GLOBAL_API_KEY
     GLOBAL_API_KEY = key
     return GLOBAL_API_KEY
-
