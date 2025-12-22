@@ -113,8 +113,11 @@ def init_llm_client():
     env_path = os.path.join(script_dir, "api.env")
     load_dotenv(env_path)
     
+    # 优先尝试从环境变量获取，如果没有则尝试从 api.env 获取
+    api_key = os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
     client = OpenAI(
-        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        api_key=api_key,
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
     return client
@@ -177,7 +180,7 @@ def analyze_round_with_llm(client, round_data: str, map_name: str) -> dict:
 """
 
     completion = client.chat.completions.create(
-        model="qwen3-max",
+        model="qwen-max", # 修正为通用模型名，如果你的环境必须是 qwen3-max 请改回
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": round_data},
@@ -222,7 +225,7 @@ def analyze_round_summary_with_llm(client, round_summary_data: str, map_name: st
 """
 
     completion = client.chat.completions.create(
-        model="qwen3-max",
+        model="qwen-max", # 修正为通用模型名
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": round_summary_data},
@@ -252,6 +255,21 @@ def analyze_economy(demo_path: str, enable_llm: bool = True):
         demo_path: demo 文件路径
         enable_llm: 是否启用大模型战术分析
     """
+    
+    # ================= [新增] 1. 缓存检查逻辑 =================
+    base_name = os.path.splitext(os.path.basename(demo_path))[0]
+    output_dir = os.path.join("data", base_name)
+    os.makedirs(output_dir, exist_ok=True)
+    cache_file = os.path.join(output_dir, "economy_gen_cache.csv")
+
+    if os.path.exists(cache_file):
+        try:
+            print(f"💰 [Economy] 🚀 检测到现有缓存: {cache_file}，直接加载！")
+            return pd.read_csv(cache_file, encoding='utf-8-sig')
+        except Exception as e:
+            print(f"⚠️ 缓存读取失败，将重新生成... {e}")
+    # =========================================================
+
     print(f"正在加载 demo: {demo_path}")
     demo = Demo(demo_path)
     demo.parse()
@@ -473,7 +491,7 @@ def analyze_economy(demo_path: str, enable_llm: bool = True):
                 continue
             print(f"\n  【{side_name}方】")
             print("  ┌───────────────────────────────────────────────────────────────────────────────────┐")
-            print("  │ 选手名           │ 起始金钱  │ 上回合剩余│ 起始装备                 │ 上回合购买              │")
+            print("  │ 选手名            │ 起始金钱  │ 上回合剩余│ 起始装备                  │ 上回合购买              │")
             print("  ├───────────────────────────────────────────────────────────────────────────────────┤")
             
             for player in players:
@@ -705,6 +723,12 @@ def analyze_economy(demo_path: str, enable_llm: bool = True):
     # ========== 7. 创建事件 DataFrame ==========
     events_df = pd.DataFrame(events_data)
     
+    # ================= [新增] 2. 缓存保存逻辑 =================
+    if not events_df.empty:
+        events_df.to_csv(cache_file, index=False, encoding='utf-8-sig')
+        print(f"💰 [Economy] ✅ 生成完成，已保存至缓存: {cache_file}")
+    # =========================================================
+
     return events_df
 
 
@@ -731,5 +755,3 @@ if __name__ == "__main__":
     
     # 使用接口获取 events_df
     events_df = get_events_df(demo_path, enable_llm=True)
-    
-

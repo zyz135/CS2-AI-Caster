@@ -1,60 +1,69 @@
 import os
 import argparse
+import subprocess
 import sys
-import traceback
+from master_scheduler import MasterScheduler
 
-try:
-    from pretreatment import extract_specified_player_data_wrapper
-    # 导入新的主分析函数
-    from data_analysis import run_tactical_analysis
-except ImportError as e:
-    print(f"❌ 导入错误: {e}")
-    sys.exit(1)
+# === 填入你的 Key ===
+MY_API_KEY = "sk-c2435a4ac2574b4e8ef61ef0c3da7ed4"
+
+def run_script(script_name):
+    """辅助函数：运行外部脚本"""
+    if not os.path.exists(script_name):
+        print(f"⚠️ [Skipped] 找不到脚本: {script_name}，跳过该步骤。")
+        return
+    
+    print(f"\n🚀 [Auto-Runner] 正在执行: {script_name} ...")
+    # 使用当前解释器运行脚本
+    result = subprocess.run([sys.executable, script_name], capture_output=False)
+    
+    if result.returncode != 0:
+        print(f"❌ [Error] {script_name} 运行出错！")
+    else:
+        print(f"✅ [Success] {script_name} 执行完毕。")
 
 def main():
-    parser = argparse.ArgumentParser(description="CS2 战术解说生成器")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--demo", type=str, required=True, help="Demo文件路径")
-    parser.add_argument("--force", action="store_true", help="强制重新提取原始数据")
-    parser.add_argument("--test", action="store_true", help="测试模式 (仅跑 R1 和 R13)")
     args = parser.parse_args()
 
     if not os.path.exists(args.demo):
-        print(f"❌ Demo文件不存在: {args.demo}")
+        print(f"❌ 找不到文件: {args.demo}")
         return
 
-    # 路径设置
-    base_name = os.path.splitext(os.path.basename(args.demo))[0]
-    output_dir = os.path.join("data", base_name)
-    os.makedirs(output_dir, exist_ok=True)
-    path_raw_csv = os.path.join(output_dir, "1_raw_data.csv")
+    # ==========================================
+    # 第一步：数据清洗 (Clean Module)
+    # ==========================================
+    # 使用你提供的 clean_cache.py 清除格式杂质
+    # (由于 MasterScheduler 现在优先读 Medium/Long，我们不需要填充 Short 了，只要洗干净就行)
+    run_script("clean_cache.py")
 
-    print("="*60)
-    print(f"🎬 任务: {base_name}")
-    print("="*60)
-
-    # === Step 1: 数据提取 ===
-    if args.force or not os.path.exists(path_raw_csv):
-        print(f"\n[1/2] 正在提取数据...")
-        try:
-            extract_specified_player_data_wrapper(args.demo, path_raw_csv)
-        except Exception as e:
-            print(f"❌ 提取失败: {e}")
-            traceback.print_exc()
-            return
-    else:
-        print(f"\n⚡ [1/2] 原始数据已存在，跳过提取。")
-
-    # === Step 2: 战术分析 ===
-    print(f"\n[2/2] 正在进行战术分析 (多版本文本生成)...")
-    
-    # 根据参数决定跑哪些回合
-    target_rounds = [1, 13] if args.test else None
-    
+    # ==========================================
+    # 第二步：核心调度与生成 (Master Scheduler)
+    # ==========================================
+    print("\n⚔️ [Master] 开始运行主调度器 (v3.1 中长文本优先版)...")
     try:
-        run_tactical_analysis(path_raw_csv, output_dir, target_rounds=target_rounds)
+        # 设置环境变量，确保子模块能读到 Key
+        os.environ["DASHSCOPE_API_KEY"] = MY_API_KEY
+        os.environ["OPENAI_API_KEY"] = MY_API_KEY
+        
+        # 实例化并运行
+        scheduler = MasterScheduler(args.demo, MY_API_KEY)
+        scheduler.run()
+        
     except Exception as e:
-        print(f"❌ 分析失败: {e}")
+        print(f"❌ 运行调度器出错: {e}")
+        import traceback
         traceback.print_exc()
+        return # 如果调度器挂了，就不跑润色了
+
+    # ==========================================
+    # 第三步：风格润色 (Style Rewriter)
+    # ==========================================
+    # 把生成的 final_xxx.csv 变成“玩机器”风格
+    run_script("style_rewriter.py")
+
+    print("\n🎉🎉🎉 全流程执行完毕！可以直接去 data 文件夹看结果了！")
 
 if __name__ == "__main__":
     main()

@@ -1,24 +1,34 @@
 from awpy import Demo
 from config import DEMO_PATH
+import pandas as pd
 
-# 1. 解析 Demo
-print(f"🔍 正在检查文件: {DEMO_PATH}")
-dem = Demo(path=DEMO_PATH, verbose=False)
-dem.parse()
+print(f"🔍 正在扫描 Grenades 表: {DEMO_PATH}")
 
-# 2. 获取 ticks 表
-df = dem.ticks.to_pandas()
+try:
+    dem = Demo(DEMO_PATH, verbose=False)
+    dem.parse()
+    
+    if hasattr(dem, 'grenades'):
+        # 尝试转换为 DataFrame
+        attr = getattr(dem, 'grenades')
+        df = attr.to_pandas() if hasattr(attr, "to_pandas") else pd.DataFrame(attr)
+        
+        print("\n✅ [grenades] 表的所有列名:")
+        print(list(df.columns))
+        
+        # 寻找疑似经济相关的列
+        keywords = ['money', 'cash', 'equip', 'val', 'acc', 'cost', 'price']
+        match_cols = [c for c in df.columns if any(k in c.lower() for k in keywords)]
+        
+        if match_cols:
+            print(f"\n💰 发现疑似经济列: {match_cols}")
+            if not df.empty:
+                print("📊 数据样本 (第一行):")
+                print(df[match_cols].iloc[0].to_dict())
+        else:
+            print("\n❌ 遗憾，[grenades] 表里也没有直接的金钱或价值列。")
+    else:
+        print("❌ Demo 对象中没有 grenades 属性。")
 
-# 3. 打印关键信息
-print("\n" + "="*40)
-print("1. 所有列名 (Columns):")
-print(list(df.columns))
-
-print("\n2. 假如有一列叫 'team' 或 'side'，它的值长什么样？")
-# 尝试寻找可能的阵营列并打印前几个值，方便我判断是 "T" 还是 "TERRORIST"
-possible_cols = ['side', 'team', 'team_name', 'side_name']
-for col in possible_cols:
-    if col in df.columns:
-        print(f"   发现列 [{col}]: {df[col].unique()}")
-
-print("="*40)
+except Exception as e:
+    print(f"❌ 运行出错: {e}")
