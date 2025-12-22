@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from awpy import Demo
 from scipy.spatial.distance import cdist
-from config import DEMO_PATH, TICKRATE, PREPROCESSED_DATA_PATH
+from config import DEMO_PATH, PREPROCESSED_DATA_PATH
 from mapping_table import anchors 
 import warnings
 import traceback
@@ -21,14 +21,14 @@ def bulk_mapping_3d_v2(df):
     """同时返回具体点位名和宏观区域"""
     if df.empty: return [], []
     
-    # 你的数据里已经是大写 X, Y, Z 了，但为了保险起见保留映射
+    # 坐标列名标准化
     rename_map = {}
-    if 'x' in df.columns and 'X' not in df.columns: rename_map['x'] = 'X'
-    if 'y' in df.columns and 'Y' not in df.columns: rename_map['y'] = 'Y'
-    if 'z' in df.columns and 'Z' not in df.columns: rename_map['z'] = 'Z'
+    for col in ['x', 'y', 'z']:
+        if col in df.columns and col.upper() not in df.columns:
+            rename_map[col] = col.upper()
     if rename_map: df = df.rename(columns=rename_map)
     
-    # 安全检查：如果没有坐标列，返回 Unknown
+    # 安全检查
     if not {'X', 'Y', 'Z'}.issubset(df.columns):
         return np.full(len(df), "Unknown"), np.full(len(df), "Unknown")
 
@@ -39,21 +39,13 @@ def bulk_mapping_3d_v2(df):
     return ANCHOR_NAMES[min_indices], ANCHOR_MACROS[min_indices]
 
 # ---------------------------------------------------------
-# 2. 列名与数据清洗 (核心修复)
+# 2. 列名与数据清洗
 # ---------------------------------------------------------
 def standardize_columns(df):
-    """
-    针对你的数据结构 ['health', 'place', 'side', 'X', 'Y', 'Z', 'tick', 'name', 'round_num'] 进行清洗
-    """
-    # 1. 确保 side 列存在并标准化
     if 'side' in df.columns:
-        # 转字符串 -> 转大写 -> 去空格
         df['side'] = df['side'].astype(str).str.upper().str.strip()
-        
-        # 处理 None 或 'NAN'
         df['side'] = df['side'].replace({'NONE': '', 'NAN': ''})
     
-    # 2. 确保 health 是数字
     if 'health' in df.columns:
         df['health'] = pd.to_numeric(df['health'], errors='coerce').fillna(0)
         
@@ -67,15 +59,26 @@ def extract_specified_player_data():
     print(f"🚀 [0.0s] 开始解析 Demo: {DEMO_PATH}")
     
     try:
-        dem = Demo(path=DEMO_PATH, tickrate=TICKRATE, verbose=False)
+        # 让 awpy 自动检测 tickrate
+        dem = Demo(path=DEMO_PATH, verbose=False)
         dem.parse()
         
-        df_ticks = dem.ticks.to_pandas()
-        if df_ticks.empty: raise Exception("选手数据为空")
+        # 获取 tickrate (兼容不同版本)
+        demo_tickrate = 128 
+        if hasattr(dem, 'tickrate'): demo_tickrate = dem.tickrate
+        elif hasattr(dem, 'header') and 'tickrate' in dem.header: demo_tickrate = dem.header['tickrate']
+        print(f"ℹ️  检测到 Demo Tickrate: {demo_tickrate}")
+
+        # 处理 ticks 数据 (兼容 Polars/Pandas)
+        if hasattr(dem.ticks, "to_pandas"):
+            df_ticks = dem.ticks.to_pandas()
+        else:
+            df_ticks = dem.ticks 
+            
+        if df_ticks.empty: raise Exception("选手数据为空 (ticks data is empty)")
         
-        # === 🟢 修复步骤：清洗数据 ===
+        # 清洗数据
         df_ticks = standardize_columns(df_ticks)
-        # ==========================
         
         print(f"⏱️ [{time.time()-t0:.2f}s] 解析完成，开始处理...")
 
@@ -83,29 +86,57 @@ def extract_specified_player_data():
         # Step 1: 选手数据处理
         # -------------------------------------------------
         round_start_map = df_ticks.groupby("round_num")["tick"].min().to_dict()
-        df_ticks["second"] = (df_ticks["tick"] - df_ticks["round_num"].map(round_start_map)) // TICKRATE
+        df_ticks["second"] = (df_ticks["tick"] - df_ticks["round_num"].map(round_start_map)) // demo_tickrate
         
-        # === C4 安放检测 (基于事件，不依赖 inventory) ===
+        # === 🟢 [精准修复] C4 安放检测 (基于 dem.bomb) ===
         plant_tick_map = {}
         try:
-            # 兼容不同 awpy 版本读取事件的方式
-            if hasattr(dem, 'bomb_planted'): 
-                df_plants = dem.bomb_planted.to_pandas()
-            else: 
-                df_plants = dem.events.get("bomb_planted", pd.DataFrame())
-                
-            if not df_plants.empty:
-                plant_tick_map = df_plants.groupby("round_num")["tick"].min().to_dict()
-                print(f"   💣 成功读取 C4 安放事件: 共 {len(plant_tick_map)} 回合")
-        except Exception as e:
-            print(f"   ⚠️ 读取安放事件失败 (非致命): {e}")
+            df_bomb = pd.DataFrame()
+            
+            # 1. 读取 dem.bomb 表
+            if hasattr(dem, 'bomb'):
+                raw = dem.bomb
+                if hasattr(raw, "to_pandas"): df_bomb = raw.to_pandas()
+                else: df_bomb = pd.DataFrame(raw)
+            else:
+                print("   ⚠️ 未找到 dem.bomb 属性")
 
+            # 2. 筛选 event == 'plant'
+            if not df_bomb.empty:
+                if 'event' in df_bomb.columns:
+                    # 你的调试信息显示事件类型为 'plant'
+                    df_plants = df_bomb[df_bomb['event'] == 'plant']
+                    
+                    if not df_plants.empty:
+                        # 你的调试信息显示包含 'round_num' 和 'tick'
+                        plant_tick_map = df_plants.groupby("round_num")["tick"].min().to_dict()
+                        print(f"   💣 成功读取 C4 安放事件: 共 {len(plant_tick_map)} 回合")
+                    else:
+                        print("   ⚠️ dem.bomb 中未发现 'plant' 事件 (本场可能无下包?)")
+                else:
+                    print("   ❌ 严重: dem.bomb 存在但缺少 'event' 列")
+            else:
+                # 兜底：尝试从 events 字典找 (旧版兼容)
+                if hasattr(dem, 'events') and "bomb_planted" in dem.events:
+                    print("   🔄 尝试从 dem.events['bomb_planted'] 读取...")
+                    raw = dem.events["bomb_planted"]
+                    df_plants = raw.to_pandas() if hasattr(raw, "to_pandas") else pd.DataFrame(raw)
+                    if not df_plants.empty:
+                        plant_tick_map = df_plants.groupby("round_num")["tick"].min().to_dict()
+                        print(f"   💣 成功读取 C4 安放事件 (events): 共 {len(plant_tick_map)} 回合")
+
+        except Exception as e:
+            print(f"   ⚠️ 读取安放事件逻辑出错: {e}")
+            traceback.print_exc()
+
+        # 应用 C4 状态
         df_ticks['is_c4_planted'] = False
         for r, p_tick in plant_tick_map.items():
+            # 标记该回合中，tick 大于等于安装时间的时刻
             mask = (df_ticks['round_num'] == r) & (df_ticks['tick'] >= p_tick)
             df_ticks.loc[mask, 'is_c4_planted'] = True
             
-        # 极速采样 (去掉 has_c4，因为没有 inventory 列)
+        # 极速采样
         cols_needed = ["round_num", "second", "tick", "name", "side", "X", "Y", "Z", "health", "is_c4_planted"]
         existing_cols = [c for c in cols_needed if c in df_ticks.columns]
         
@@ -124,48 +155,61 @@ def extract_specified_player_data():
         print(f"⏱️ [{time.time()-t0:.2f}s] 提取道具覆盖状态...")
         active_utility_data = []
 
+        def to_pd(obj):
+            if hasattr(obj, "to_pandas"): return obj.to_pandas()
+            return pd.DataFrame(obj) if obj is not None else pd.DataFrame()
+
         # 处理 Smoke
         if hasattr(dem, 'smokes'):
-            df_smokes = dem.smokes.to_pandas()
+            df_smokes = to_pd(dem.smokes)
             if not df_smokes.empty:
-                # 简单列名适配
-                if 'x' in df_smokes.columns: df_smokes = df_smokes.rename(columns={'x':'X', 'y':'Y', 'z':'Z'})
+                rename_map = {c: c.upper() for c in ['x','y','z'] if c in df_smokes.columns}
+                df_smokes = df_smokes.rename(columns=rename_map)
                 
                 names, _ = bulk_mapping_3d_v2(df_smokes)
                 df_smokes['loc'] = names
+                
                 for row in df_smokes.itertuples():
-                    r_num = getattr(row, 'round_num', None)
-                    if r_num is None: continue
-                    s_tick, e_tick = row.start_tick, row.end_tick
-                    if pd.isna(e_tick): e_tick = s_tick + (18 * TICKRATE)
-                    r_start_tick = round_start_map.get(r_num, s_tick)
-                    if r_start_tick is None: continue
-                    
-                    start_sec = int((s_tick - r_start_tick)//TICKRATE)
-                    end_sec = int((e_tick - r_start_tick)//TICKRATE)
-                    for sec in range(start_sec, end_sec + 1):
-                        active_utility_data.append((r_num, sec, f"{row.loc}(Smoke)"))
+                    try:
+                        r_num = getattr(row, 'round_num', None)
+                        if r_num is None: continue
+                        s_tick = getattr(row, 'start_tick', getattr(row, 'tick', 0))
+                        e_tick = getattr(row, 'end_tick', s_tick + (18 * demo_tickrate))
+                        
+                        if pd.isna(e_tick): e_tick = s_tick + (18 * demo_tickrate)
+                        r_start_tick = round_start_map.get(r_num, s_tick)
+                        
+                        start_sec = int((s_tick - r_start_tick)//demo_tickrate)
+                        end_sec = int((e_tick - r_start_tick)//demo_tickrate)
+                        for sec in range(start_sec, end_sec + 1):
+                            active_utility_data.append((r_num, sec, f"{row.loc}(Smoke)"))
+                    except: continue
 
         # 处理 Fire
         if hasattr(dem, 'infernos'):
-            df_infernos = dem.infernos.to_pandas()
+            df_infernos = to_pd(dem.infernos)
             if not df_infernos.empty:
-                if 'x' in df_infernos.columns: df_infernos = df_infernos.rename(columns={'x':'X', 'y':'Y', 'z':'Z'})
+                rename_map = {c: c.upper() for c in ['x','y','z'] if c in df_infernos.columns}
+                df_infernos = df_infernos.rename(columns=rename_map)
                 
                 names, _ = bulk_mapping_3d_v2(df_infernos)
                 df_infernos['loc'] = names
+                
                 for row in df_infernos.itertuples():
-                    r_num = getattr(row, 'round_num', None)
-                    if r_num is None: continue
-                    s_tick, e_tick = row.start_tick, row.end_tick
-                    if pd.isna(e_tick): e_tick = s_tick + (7 * TICKRATE)
-                    r_start_tick = round_start_map.get(r_num, s_tick)
-                    if r_start_tick is None: continue
-                    
-                    start_sec = int((s_tick - r_start_tick)//TICKRATE)
-                    end_sec = int((e_tick - r_start_tick)//TICKRATE)
-                    for sec in range(start_sec, end_sec + 1):
-                        active_utility_data.append((r_num, sec, f"{row.loc}(Fire)"))
+                    try:
+                        r_num = getattr(row, 'round_num', None)
+                        if r_num is None: continue
+                        s_tick = getattr(row, 'start_tick', getattr(row, 'tick', 0))
+                        e_tick = getattr(row, 'end_tick', s_tick + (7 * demo_tickrate))
+                        
+                        if pd.isna(e_tick): e_tick = s_tick + (7 * demo_tickrate)
+                        r_start_tick = round_start_map.get(r_num, s_tick)
+                        
+                        start_sec = int((s_tick - r_start_tick)//demo_tickrate)
+                        end_sec = int((e_tick - r_start_tick)//demo_tickrate)
+                        for sec in range(start_sec, end_sec + 1):
+                            active_utility_data.append((r_num, sec, f"{row.loc}(Fire)"))
+                    except: continue
 
         # -------------------------------------------------
         # Step 3: 聚合与保存
@@ -180,7 +224,7 @@ def extract_specified_player_data():
             df_final = df_agg
             df_final["active_utility"] = ""
 
-        # 确保 location_macro 存在
+        # 补齐列
         final_cols = ["round_num", "second", "tick", "name", "side", "location_name", "location_macro", "health", "active_utility", "X", "Y", "Z", "is_c4_planted"]
         for c in final_cols:
             if c not in df_final.columns: df_final[c] = ""
