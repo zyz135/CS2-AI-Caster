@@ -219,14 +219,12 @@ class MasterScheduler:
     def step3_merge(self, all_dfs):
         if not all_dfs: return pd.DataFrame()
         
-        # 即使只用 medium/long，我们也先保留所有列，方便后续处理
         core_cols = ['event_id', 'round_num', 'start_time', 'priority', 
                      'short_text_neutral', 'medium_text_neutral', 'long_text_neutral', 'module']
         
         cleaned = []
         for df in all_dfs:
             temp = df.copy()
-            # 兼容列名缺失的情况
             for c in core_cols:
                 if c not in temp.columns: temp[c] = ""
             cleaned.append(temp[core_cols])
@@ -259,13 +257,10 @@ class MasterScheduler:
             module = row['module']
             
             # === 🔥 修改点：只取 Medium 或 Long ===
-            # 优先取 Medium
             text = str(row.get('medium_text_neutral', '')).strip()
-            # 如果 Medium 无效，取 Long
             if not text or text.lower() in ['nan', 'none', '']:
                 text = str(row.get('long_text_neutral', '')).strip()
             
-            # 如果连 Long 都没有，跳过（绝不取 Short）
             if not text or text.lower() in ['nan', 'none', '']: 
                 continue
             # =======================================
@@ -275,13 +270,12 @@ class MasterScheduler:
                 half_break_index = len(schedule)
                 if start_t < global_cursor: global_cursor = 0.0
 
-            # 简单的文本清洗
             text = text.replace("短版", "").replace("中版", "").replace("长版", "").replace("---", "").strip()
             if not text: continue
 
-            # 动态时长 (字数变多了，时长自然会增加)
+            # 动态时长
             est_duration = len(text) / 5.0
-            dur = max(2.5, min(est_duration, 10.0)) # 放宽上限到10秒，适应长文本
+            dur = max(2.5, min(est_duration, 10.0)) 
             if module == 'grenade': dur = min(dur, 3.0) 
 
             # 🚀 强制插队逻辑

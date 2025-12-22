@@ -2,10 +2,14 @@ import os
 import argparse
 import subprocess
 import sys
+from dotenv import load_dotenv # 加载环境变量
 from master_scheduler import MasterScheduler
 
-# === 填入你的 Key ===
-MY_API_KEY = "sk-c2435a4ac2574b4e8ef61ef0c3da7ed4"
+# 加载 .env 文件中的变量
+load_dotenv()
+
+# 从环境变量获取 Key
+MY_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
 def run_script(script_name):
     """辅助函数：运行外部脚本"""
@@ -31,11 +35,14 @@ def main():
         print(f"❌ 找不到文件: {args.demo}")
         return
 
+    if not MY_API_KEY:
+        print("❌ 错误：未找到 API Key！请确保项目根目录下有 .env 文件并配置了 DASHSCOPE_API_KEY")
+        return
+
     # ==========================================
     # 第一步：数据清洗 (Clean Module)
     # ==========================================
-    # 使用你提供的 clean_cache.py 清除格式杂质
-    # (由于 MasterScheduler 现在优先读 Medium/Long，我们不需要填充 Short 了，只要洗干净就行)
+    # 使用 clean_cache.py 清除格式杂质
     run_script("clean_cache.py")
 
     # ==========================================
