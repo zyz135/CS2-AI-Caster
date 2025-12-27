@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import concurrent.futures
+from openai import OpenAI
+from awpy import Demo 
+import config 
 
-# ==========================================
-# 1. 全局变量预先初始化
-# ==========================================
+# 全局变量
 run_tactical_analysis = None
 set_tactical_api = None
 run_grenade_analysis = None
@@ -14,326 +16,207 @@ process_dem_file = None
 get_eco_df = None
 extract_specified_player_data_wrapper = None
 
-print("📦 [System] 正在加载模块...")
+MERGE_THRESHOLD = 5.0  
+MAX_MERGE_COUNT = 3    
+COMPRESS_MODEL = "qwen-max"
+COMPRESS_PROMPT = "你是一名CS2解说。请将多条解说文案合并为一句简练、紧凑的解说。要求：保留关键信息，字数限制30字以内，口语化。"
 
-# ==========================================
-# 2. 安全导入子模块
-# ==========================================
-try:
-    from data_analysis import run_tactical_analysis, setAPI as set_tactical_api
-except Exception as e: print(f"   ⚠️ 警告: 无法加载战术模块: {e}")
+print("📦 [System] 加载模块...")
+try: from data_analysis import run_tactical_analysis, setAPI as set_tactical_api
+except: pass
+try: from createTexts import run_grenade_analysis, setAPI_KEY as set_grenade_api
+except: pass
+try: from read_demo import makeCSV
+except: pass
+try: from final_kill import process_dem_file
+except: pass
+try: from eco_and_round import get_events_df as get_eco_df
+except: pass
+try: from pretreatment import extract_specified_player_data_wrapper
+except: pass
 
-try:
-    from createTexts import run_grenade_analysis, setAPI_KEY as set_grenade_api
-except Exception as e: print(f"   ⚠️ 警告: 无法加载道具模块: {e}")
-
-try:
-    from final_kill import process_dem_file
-except Exception as e: print(f"   ⚠️ 警告: 无法加载击杀模块: {e}")
-
-try:
-    from eco_and_round import get_events_df as get_eco_df
-except Exception as e: print(f"   ⚠️ 警告: 无法加载经济模块: {e}")
-
-try:
-    from pretreatment import extract_specified_player_data_wrapper
-except Exception as e: print(f"   ⚠️ 警告: 无法加载预处理模块: {e}")
-
-
-# ==========================================
-# 3. 调度器类定义
-# ==========================================
 class MasterScheduler:
-    def __init__(self, demo_path, api_key):
+    def __init__(self, demo_path, api_key, test_mode=False):
         self.demo_path = demo_path
         self.api_key = api_key
-        
+        self.test_mode = test_mode
         self.base_name = os.path.splitext(os.path.basename(demo_path))[0]
         self.output_dir = os.path.join("data", self.base_name)
-        os.makedirs(self.output_dir, exist_ok=True)
-        self.raw_data_path = os.path.join(self.output_dir, "1_raw_data.csv")
         
-        self.round_global_offsets = {} 
-        self.round_start_ticks = {}
-        
-        self._distribute_api_key()
+        self.raw_dir = os.path.join(self.output_dir, "raw")
+        self.cache_dir = os.path.join(self.output_dir, "cache")
+        self.output_final_dir = os.path.join(self.output_dir, "output")
+        for d in [self.output_dir, self.raw_dir, self.cache_dir, self.output_final_dir]:
+            if not os.path.exists(d): os.makedirs(d)
+            
+        self.client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        self.tickrate = float(config.TICKRATE)
+        self.time_offsets = self._calculate_half_offsets()
 
-    def _distribute_api_key(self):
-        print(f"🔑 [System] 正在分发 API Key...")
-        if set_tactical_api: set_tactical_api(self.api_key)
-        if set_grenade_api: set_grenade_api(self.api_key)
-        os.environ["DASHSCOPE_API_KEY"] = self.api_key
-        os.environ["OPENAI_API_KEY"] = self.api_key
-
-    def _calculate_offsets(self):
-        if not os.path.exists(self.raw_data_path): return
+    def _calculate_half_offsets(self):
+        print(f"🕒 [Scheduler] 计算时间锚点 (Tickrate=64)...")
         try:
-            df = pd.read_csv(self.raw_data_path, usecols=['round_num', 'second', 'tick'])
-            self.round_start_ticks = df.groupby('round_num')['tick'].min().to_dict()
-            rounds = sorted(df['round_num'].unique())
-            running_time = 0.0
-            is_second_half = False
-            for r_num in rounds:
-                if r_num == 13 and not is_second_half:
-                    running_time = 0.0
-                    is_second_half = True
-                self.round_global_offsets[r_num] = running_time
-                max_sec = df[df['round_num'] == r_num]['second'].max()
-                running_time += max_sec
-            print(f"✅ [System] 已建立战术时间基准 (覆盖 {len(rounds)} 个回合)")
-        except Exception as e:
-            print(f"⚠️ 无法计算时间偏移: {e}")
+            dem = Demo(self.demo_path)
+            dem.parse() 
+            rounds = dem.rounds.to_pandas() if hasattr(dem.rounds, 'to_pandas') else pd.DataFrame(dem.rounds)
+            
+            offset_upper = 0.0
+            offset_lower = 0.0
+            f_end_col = next((c for c in rounds.columns if 'freeze' in c), 'start')
+            
+            def get_seconds(row):
+                val = row[f_end_col]
+                return (val / self.tickrate) - 15.0
+
+            r1 = rounds[rounds['round_num'] == 1]
+            if not r1.empty: offset_upper = get_seconds(r1.iloc[0])
+
+            r13 = rounds[rounds['round_num'] == 13]
+            if not r13.empty: offset_lower = get_seconds(r13.iloc[0])
+            
+            print(f"   ✨ R1 偏移: {offset_upper:.2f}s")
+            return {"upper": offset_upper, "lower": offset_lower}
+        except: return {"upper": 0.0, "lower": 0.0}
 
     def step1_pretreatment(self):
-        if os.path.exists(self.raw_data_path):
-            print("✅ [Step 1] 基础数据已存在，跳过提取。")
-            self._calculate_offsets()
-            return True
-
-        if not extract_specified_player_data_wrapper:
-            print("❌ 错误：缺少预处理模块且无缓存数据。")
-            return False
-
         print("🔄 [Step 1] 提取基础数据...")
-        try:
-            extract_specified_player_data_wrapper(self.demo_path, self.raw_data_path)
-            self._calculate_offsets()
-            return True
-        except Exception as e:
-            print(f"❌ 预处理执行失败: {e}")
-            return False
-
-    def _align_to_tactical_standard(self, df, module_type):
-        if df.empty: return df
-        
-        # 1. 战术模块: 已经是净时间，无需转换
-        if module_type == 'tactical': return df
-        
-        # 2. 击杀模块: 已经是相对时间 (Relative)，只需加 Offset
-        if module_type == 'kill':
-            def fix_relative(row):
-                r = row['round_num']
-                rel_t = row['start_time']
-                offset = self.round_global_offsets.get(r, 0.0)
-                return offset + rel_t
-            df['start_time'] = df.apply(fix_relative, axis=1)
-            return df
-            
-        # 3. 道具 & 经济: 是绝对时间 (Absolute)，必须先减去 RoundStart，再加 Offset
-        if module_type in ['grenade', 'economy']:
-            def fix_absolute(row):
-                r = row['round_num']
-                abs_t_sec = row['start_time'] # 这里是绝对时间 (秒)
-                
-                # 获取该回合的绝对开始时间 (秒)
-                start_tick = self.round_start_ticks.get(r)
-                rel_t = 0.0
-                if start_tick:
-                    base_sec = start_tick / 128.0
-                    # 计算相对时间 (去掉了热身/暂停)
-                    rel_t = max(0.0, abs_t_sec - base_sec)
-                
-                # 加上全局偏移，对齐到战术时间轴
-                offset = self.round_global_offsets.get(r, 0.0)
-                return offset + rel_t
-
-            df['start_time'] = df.apply(fix_absolute, axis=1)
-            return df
-            
-        return df
+        if extract_specified_player_data_wrapper:
+            try:
+                self.df_pretreatment = extract_specified_player_data_wrapper(self.demo_path, os.path.join(self.raw_dir, "1_raw_data.csv"))
+                if self.test_mode and self.df_pretreatment is not None:
+                    self.df_pretreatment = self.df_pretreatment[self.df_pretreatment['round_num'] == 1]
+                return True
+            except: pass
+        return False
 
     def step2_collect_all_modules(self):
+        print("🔄 [Step 2] 并行生成...")
+        if set_tactical_api: set_tactical_api(self.api_key)
+        if set_grenade_api: set_grenade_api(self.api_key)
+        
         all_dfs = []
-        print("\n🚀 [Step 2] 并行调用子模块...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {}
+            if process_dem_file: futures[executor.submit(process_dem_file, self.demo_path, self.test_mode)] = "Kill"
+            if get_eco_df: futures[executor.submit(get_eco_df, self.demo_path, True, self.test_mode)] = "Eco"
+            if run_grenade_analysis: futures[executor.submit(run_grenade_analysis, self.demo_path, self.test_mode)] = "Grenade"
+            
+            if run_tactical_analysis and self.df_pretreatment is not None:
+                futures[executor.submit(run_tactical_analysis, self.df_pretreatment, self.output_dir, None, self.test_mode)] = "Tactical"
 
-        # A. 战术
-        t1 = os.path.join(self.output_dir, "tactical_gen_cache.csv")
-        df_tact = pd.DataFrame()
-        if os.path.exists(t1):
-            print(f"   >>> 战术模块: 读取缓存")
-            df_tact = pd.read_csv(t1)
-        elif run_tactical_analysis:
-            print(f"   >>> 战术模块: 运行生成...")
-            try: df_tact = run_tactical_analysis(self.raw_data_path, self.output_dir)
-            except: pass
-        if not df_tact.empty:
-            df_tact['module'] = 'tactical'
-            all_dfs.append(df_tact)
-
-        # B. 击杀
-        k1 = os.path.join(self.output_dir, "kill_gen_cache.csv")
-        if os.path.exists(k1):
-            print("   >>> 击杀模块: 读取缓存")
-            df = pd.read_csv(k1)
-            df['module'] = 'kill'
-            df = self._align_to_tactical_standard(df, 'kill')
-            all_dfs.append(df)
-        elif process_dem_file:
-            print("   >>> 击杀模块: 运行生成...")
-            try:
-                df = process_dem_file(self.demo_path, self.api_key, verbose=False)
-                if not df.empty:
-                    df['module'] = 'kill'
-                    df = self._align_to_tactical_standard(df, 'kill')
-                    all_dfs.append(df)
-            except Exception as e: print(f"Error Kill: {e}")
-
-        # C. 道具
-        g1 = os.path.join(self.output_dir, "grenade_gen_cache.csv")
-        if os.path.exists(g1):
-            print("   >>> 道具模块: 读取缓存")
-            df = pd.read_csv(g1)
-            df['module'] = 'grenade'
-            df = self._align_to_tactical_standard(df, 'grenade')
-            all_dfs.append(df)
-        elif run_grenade_analysis:
-            print("   >>> 道具模块: 运行生成...")
-            try:
-                df = run_grenade_analysis(self.demo_path)
-                if not df.empty:
-                    df['module'] = 'grenade'
-                    df = self._align_to_tactical_standard(df, 'grenade')
-                    all_dfs.append(df)
-            except: pass
-
-        # D. 经济
-        e1 = os.path.join(self.output_dir, "economy_gen_cache.csv")
-        if os.path.exists(e1):
-            print("   >>> 经济模块: 读取缓存")
-            df = pd.read_csv(e1)
-            df['module'] = 'economy'
-            df = self._align_to_tactical_standard(df, 'economy') 
-            all_dfs.append(df)
-        elif get_eco_df:
-            print("   >>> 经济模块: 运行生成...")
-            try:
-                df = get_eco_df(self.demo_path, enable_llm=True)
-                if not df.empty:
-                    df['module'] = 'economy'
-                    df = self._align_to_tactical_standard(df, 'economy')
-                    all_dfs.append(df)
-            except: pass
-
+            for f in concurrent.futures.as_completed(futures):
+                try:
+                    df = f.result()
+                    if df is not None and not df.empty: all_dfs.append(df)
+                except Exception as e: print(f"   ❌ 模块失败: {e}")
         return all_dfs
 
     def step3_merge(self, all_dfs):
         if not all_dfs: return pd.DataFrame()
+        merged = pd.concat(all_dfs, ignore_index=True)
         
-        # 即使只用 medium/long，我们也先保留所有列，方便后续处理
-        core_cols = ['event_id', 'round_num', 'start_time', 'priority', 
-                     'short_text_neutral', 'medium_text_neutral', 'long_text_neutral', 'module']
+        if 'start_time' not in merged.columns:
+            if 'tick' in merged.columns: merged['start_time'] = merged['tick'] / self.tickrate
+        else:
+            if 'tick' in merged.columns: merged['start_time'] = merged['start_time'].fillna(merged['tick'] / self.tickrate)
         
-        cleaned = []
-        for df in all_dfs:
-            temp = df.copy()
-            # 兼容列名缺失的情况
-            for c in core_cols:
-                if c not in temp.columns: temp[c] = ""
-            cleaned.append(temp[core_cols])
+        if self.test_mode and 'round_num' in merged.columns:
+            merged = merged[merged['round_num'] == 1]
             
-        final_df = pd.concat(cleaned, ignore_index=True)
-        final_df['start_time'] = pd.to_numeric(final_df['start_time'], errors='coerce').fillna(0)
-        final_df['priority'] = pd.to_numeric(final_df['priority'], errors='coerce').fillna(1)
-        final_df['round_num'] = pd.to_numeric(final_df['round_num'], errors='coerce').fillna(0)
+        return merged
 
-        # 经济解说优先级提升
-        mask_eco = final_df['module'] == 'economy'
-        final_df.loc[mask_eco, 'priority'] += 8 
-
-        return final_df.sort_values(by=['round_num', 'start_time', 'priority'], ascending=[True, True, False])
-
-    def step5_schedule_and_output(self, df):
-        print("⚔️ [Step 4] 智能排期 v3.1 (中长文本优先 + 强制插队)...")
-        schedule = []
-        global_cursor = 0.0
-        
-        half_break_index = None
-        is_second_half_started = False
-        
-        df = df.sort_values(by=['round_num', 'start_time', 'priority'], ascending=[True, True, False])
+    def step4_smart_compression(self, df):
+        print("🧠 [Step 4] 智能语义压缩...")
+        if df.empty: return df
+        df = df.sort_values(['round_num', 'start_time'])
+        compressed_rows = []
+        buffer = []
         
         for _, row in df.iterrows():
-            r_num = row['round_num']
-            start_t = row['start_time']
-            prio = row['priority']
-            module = row['module']
-            
-            # === 🔥 修改点：只取 Medium 或 Long ===
-            # 优先取 Medium
-            text = str(row.get('medium_text_neutral', '')).strip()
-            # 如果 Medium 无效，取 Long
-            if not text or text.lower() in ['nan', 'none', '']:
-                text = str(row.get('long_text_neutral', '')).strip()
-            
-            # 如果连 Long 都没有，跳过（绝不取 Short）
-            if not text or text.lower() in ['nan', 'none', '']: 
-                continue
-            # =======================================
-
-            if r_num >= 13 and not is_second_half_started:
-                is_second_half_started = True
-                half_break_index = len(schedule)
-                if start_t < global_cursor: global_cursor = 0.0
-
-            # 简单的文本清洗
-            text = text.replace("短版", "").replace("中版", "").replace("长版", "").replace("---", "").strip()
-            if not text: continue
-
-            # 动态时长 (字数变多了，时长自然会增加)
-            est_duration = len(text) / 5.0
-            dur = max(2.5, min(est_duration, 10.0)) # 放宽上限到10秒，适应长文本
-            if module == 'grenade': dur = min(dur, 3.0) 
-
-            # 🚀 强制插队逻辑
-            final_start = start_t
-            
-            if module == 'tactical':
-                if start_t > global_cursor + 8.0:
-                    final_start = start_t 
+            if row.get('event_type') == 'kill':
+                if not buffer: buffer.append(row)
                 else:
-                    if global_cursor - final_start < 25.0: 
-                        final_start = global_cursor
+                    if (row['start_time'] - buffer[-1]['start_time']) < MERGE_THRESHOLD and len(buffer) < MAX_MERGE_COUNT:
+                        buffer.append(row)
                     else:
-                        continue 
+                        compressed_rows.extend(self._flush_buffer(buffer))
+                        buffer = [row]
             else:
-                if final_start < global_cursor:
-                     if prio >= 6: 
-                         final_start = global_cursor
-                     else:
-                         if global_cursor - final_start < 3.0:
-                             final_start = global_cursor
-                         else:
-                             continue
+                if buffer:
+                    compressed_rows.extend(self._flush_buffer(buffer))
+                    buffer = []
+                compressed_rows.append(row)
+        
+        if buffer: compressed_rows.extend(self._flush_buffer(buffer))
+        return pd.DataFrame(compressed_rows)
+
+    def _flush_buffer(self, buffer):
+        if not buffer: return []
+        if len(buffer) == 1: return buffer
+        
+        base = buffer[0].copy()
+        texts = [b.get('short_text_neutral', '') for b in buffer]
+        
+        try:
+            resp = self.client.chat.completions.create(
+                model=COMPRESS_MODEL,
+                messages=[{"role": "system", "content": COMPRESS_PROMPT}, {"role": "user", "content": f"合并: {'；'.join(texts)}"}]
+            )
+            base['medium_text_neutral'] = resp.choices[0].message.content.strip().strip('"')
+        except: base['medium_text_neutral'] = "；".join(texts)
+        
+        base['short_text_neutral'] = base['medium_text_neutral']
+        base['span_duration'] = buffer[-1]['start_time'] - buffer[0]['start_time']
+        return [base]
+
+    def step5_schedule_and_output(self, df):
+        print("⚔️ [Step 5] 最终对齐...")
+        schedule = []
+        df = df.sort_values(by=['start_time'])
+        
+        off_upper = self.time_offsets.get("upper", 0.0)
+        off_lower = self.time_offsets.get("lower", 0.0)
+        cursor_u, cursor_l = 0.0, 0.0
+
+        for _, row in df.iterrows():
+            r_num = int(row.get('round_num', 0))
+            start_t = float(row.get('start_time', 0))
+            if start_t <= 0.1 and r_num > 1: continue 
+
+            is_lower = (r_num >= 13)
+            offset = off_lower if is_lower else off_upper
+            adjusted_start = max(0.0, start_t - offset)
+
+            curr_cursor = cursor_l if is_lower else cursor_u
+            if adjusted_start < curr_cursor: adjusted_start = curr_cursor # 简单防重叠
             
-            final_end = final_start + dur
+            text = row.get('medium_text_neutral') or row.get('short_text_neutral')
+            if not text or str(text) == 'nan': continue
+            
+            dur = max(2.5, len(str(text)) * 0.22, float(row.get('span_duration', 0)))
+            final_end = adjusted_start + dur
+            
+            if is_lower: cursor_l = final_end
+            else: cursor_u = final_end
+            
             schedule.append({
-                '时间范围': f"{final_start:.1f}-{final_end:.1f}s",
+                '回合数': r_num,
+                '时间范围': f"{adjusted_start:.1f}-{final_end:.1f}s",
                 '解说文本': text
             })
-            global_cursor = final_end
             
-        if half_break_index is None: half_break_index = len(schedule)
-        return pd.DataFrame(schedule), half_break_index
+        return pd.DataFrame(schedule), len(schedule)//2
 
     def run(self):
-        if not self.step1_pretreatment(): return
-
-        all_dfs = self.step2_collect_all_modules()
-        merged = self.step3_merge(all_dfs)
-        
-        if merged.empty:
-            print("❌ 错误：无数据生成")
+        self.step1_pretreatment()
+        merged = self.step3_merge(self.step2_collect_all_modules())
+        if merged.empty: 
+            print("❌ 无数据")
             return
-            
-        final_sch, split_idx = self.step5_schedule_and_output(merged)
         
-        sch1 = final_sch.iloc[:split_idx]
-        sch2 = final_sch.iloc[split_idx:]
+        merged.to_csv(os.path.join(self.cache_dir, "debug_3_merged.csv"), index=False, encoding="utf-8-sig")
+        compressed = self.step4_smart_compression(merged)
+        final, _ = self.step5_schedule_and_output(compressed)
         
-        p1 = os.path.join(self.output_dir, "final_upper_half.csv")
-        p2 = os.path.join(self.output_dir, "final_lower_half.csv")
-        
-        sch1.to_csv(p1, index=False, encoding="utf-8-sig")
-        sch2.to_csv(p2, index=False, encoding="utf-8-sig")
-        
-        print(f"\n✅ 全部完成! \n上半场: {p1} ({len(sch1)}条)\n下半场: {p2} ({len(sch2)}条)")
+        final.to_csv(os.path.join(self.output_final_dir, "final_schedule.csv"), index=False, encoding='utf-8-sig')
+        print(f"🎉 完成！")

@@ -1,34 +1,43 @@
 from awpy import Demo
-from config import DEMO_PATH
 import pandas as pd
+import os
 
-print(f"🔍 正在扫描 Grenades 表: {DEMO_PATH}")
+# 替换成你的 Demo 路径
+DEMO_PATH = r"D:\uncompressed\starladder-budapest-major-2025-spirit-vs-vitality-bo3-IF7bXBRmDsHvo9kSCXua2Z\spirit-vs-vitality-m1-mirage.dem"
 
-try:
-    dem = Demo(DEMO_PATH, verbose=False)
-    dem.parse()
-    
-    if hasattr(dem, 'grenades'):
-        # 尝试转换为 DataFrame
-        attr = getattr(dem, 'grenades')
-        df = attr.to_pandas() if hasattr(attr, "to_pandas") else pd.DataFrame(attr)
+def check():
+    print(f"🔍 正在检查 Demo: {os.path.basename(DEMO_PATH)}")
+    try:
+        dem = Demo(DEMO_PATH)
+        dem.parse()
         
-        print("\n✅ [grenades] 表的所有列名:")
-        print(list(df.columns))
+        print(f"\n✅ Tickrate: {dem.tickrate}")
         
-        # 寻找疑似经济相关的列
-        keywords = ['money', 'cash', 'equip', 'val', 'acc', 'cost', 'price']
-        match_cols = [c for c in df.columns if any(k in c.lower() for k in keywords)]
-        
-        if match_cols:
-            print(f"\n💰 发现疑似经济列: {match_cols}")
-            if not df.empty:
-                print("📊 数据样本 (第一行):")
-                print(df[match_cols].iloc[0].to_dict())
-        else:
-            print("\n❌ 遗憾，[grenades] 表里也没有直接的金钱或价值列。")
-    else:
-        print("❌ Demo 对象中没有 grenades 属性。")
+        # 1. 检查 Rounds (用于时间对齐)
+        if hasattr(dem, 'rounds'):
+            rounds = dem.rounds
+            if not isinstance(rounds, pd.DataFrame): rounds = rounds.to_pandas()
+            print(f"\n[Rounds 列名]:\n{list(rounds.columns)}")
+            # 打印第一行看看实际数据
+            if not rounds.empty:
+                print(f"[Rounds 第一行示例]:\n{rounds.iloc[0].to_dict()}")
 
-except Exception as e:
-    print(f"❌ 运行出错: {e}")
+        # 2. 检查 Smokes (用于道具)
+        if hasattr(dem, 'smokes'):
+            smokes = dem.smokes
+            if not isinstance(smokes, pd.DataFrame): smokes = smokes.to_pandas()
+            print(f"\n[Smokes 列名]:\n{list(smokes.columns)}")
+            if not smokes.empty:
+                print(f"[Smokes 第一行示例]:\n{smokes.iloc[0].to_dict()}")
+        
+        # 3. 检查 Kills
+        if hasattr(dem, 'kills'):
+            kills = dem.kills
+            if not isinstance(kills, pd.DataFrame): kills = kills.to_pandas()
+            print(f"\n[Kills 列名]:\n{list(kills.columns)}")
+
+    except Exception as e:
+        print(f"❌ 读取出错: {e}")
+
+if __name__ == "__main__":
+    check()
