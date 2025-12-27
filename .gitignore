@@ -1,0 +1,5 @@
+.env
+.cursor/
+data/
+__pycache__/
+*.csv
