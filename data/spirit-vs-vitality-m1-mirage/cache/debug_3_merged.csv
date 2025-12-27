@@ -1,0 +1,15 @@
+﻿round_num,start_time,attacker,victim,weapon,is_headshot,unique_key,short_text_neutral,medium_text_neutral,long_text_neutral,priority,event_type,event_id,tick,end_time
+1,408.640625,ZywOo,tN1R,glock,False,ea9d915f-0737-45ef-b9de-7d8b66630192,ZywOo击杀tN1R,,,6,kill,,,
+1,408.96875,donk,flameZ,usp_silencer,True,6d8c5908-c810-4fd4-a887-ea07c3493d6e,donk击杀flameZ,,,6,kill,,,
+1,409.765625,donk,ZywOo,usp_silencer,True,f83f236b-508e-4f65-8f1c-df360653b911,donk击杀ZywOo,,,6,kill,,,
+1,410.5625,donk,apEX,usp_silencer,True,b6a7c0f1-26fb-4d5d-af40-d7cc6ecf8ce6,donk击杀apEX,,,6,kill,,,
+1,413.796875,sh1ro,ropz,elite,True,293d7850-b838-47e1-b5eb-aa4d89233c61,sh1ro击杀ropz,,,6,kill,,,
+1,416.390625,mezii,donk,glock,True,328461cc-598f-4b04-9f77-d32982b96447,mezii击杀donk,,,6,kill,,,
+1,473.546875,mezii,chopper,glock,False,7db02c52-6af5-4ae5-830b-f85f1792083f,mezii击杀chopper,,,6,kill,,,
+1,474.65625,sh1ro,mezii,elite,True,ca40bfdd-a5e0-4dcd-95be-f97bf6a1aa97,sh1ro击杀mezii,,,6,kill,,,
+1,423.484375,,,,,,mezii在长凳投掷了烟雾弹。,mezii精准地将一颗烟雾弹投向了长凳区域，有效阻挡了敌方视线。,在这关键的一刻，mezii展现了他对于地图的深刻理解和出色的投掷技巧。他选择了一个极佳的位置——长凳，并准确无误地投掷了一颗烟雾弹。随着烟雾逐渐弥漫开来，这不仅为队友提供了掩护，同时也成功扰乱了对手的布局，为团队赢得了宝贵的战术优势。,3,grenade,grenade_27103,,
+1,438.0,,,,,,T可能控B，CT防守。,mezii可能控制B区，sh1ro和zweih守A区，chopper直接对位。,,4,tactical,401712fb-370c-4454-8b1c-c5b3ce347e54,28032.0,
+1,408.0,,,,,,T方中路集结，CT方A区布防。,T方五人集中在中路可能计划进行中路控制或假动作后转向A或B区进攻；CT方三人固守A区，两人中路防守。,,4,tactical,d79dcd9f-786e-4d7b-a6f8-6ff9d262436b,26112.0,
+1,468.0,,,,,,T方试探，CT方防守。,mezii可能在B区搜集信息，而CT方集中在B缓冲区准备应对进攻。,,4,tactical,45ef5467-b484-4eed-8b44-c99d87009a5a,29952.0,
+1,347.015625,,,,,,双方队伍经济相同，均为基础$800，预计首回合将进行纯经济局。,在de_mirage的第一回合里，CT方和T方的每位选手都持有初始资金$800。由于这是比赛的第一个回合，两队都没有前一局购买记录，因此可以预期他们都将选择不购入任何武器装备，而是保存资金以备后续回合使用。,随着de_mirage地图上的第一回合正式拉开帷幕，我们注意到无论是防守方（CT）还是进攻方（T），所有队员当前持有的金额都是标准开局的$800。这表明，在上一个回合中没有发生任何影响经济的情况——当然，这是因为这是整个比赛系列中的第一个回合。考虑到这一点，我们可以合理推测，双方队伍很可能会决定采取保守策略，即不立即投入这笔资金去购买昂贵的枪械或设备，而是留待之后的关键时刻再做打算。这样的做法有助于确保队伍能够在接下来的几个回合内保持良好的经济状态，为可能发生的长盘对抗做好准备。,2,2,1_2_1,,352.015625
+1,492.125,,,,,,CT在de_mirage上通过拆除炸弹赢得了第1回合。,在de_mirage地图的第1回合中，尽管donk用USP消音连续击杀三名对手，但CT最终成功拆除了炸弹，赢得了这一回合。,在de_mirage地图上的激烈对抗中，第1回合以CT队伍的胜利告终。ZywOo使用格洛克首先击杀了tN1R，为团队开局。然而，donk展现出了惊人的个人能力，利用USP消音连续击倒了flameZ、ZywOo和apEX三人，几乎扭转了局势。但是，在关键时刻，sh1ro挺身而出，用双持贝瑞塔精准地击杀了ropz，帮助CT队伍稳住了局面，并最终成功拆除了炸弹，从而赢得了这个回合。,1,1,1_1_1,,497.125
