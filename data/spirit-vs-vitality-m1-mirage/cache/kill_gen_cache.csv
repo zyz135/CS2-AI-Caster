@@ -1,9 +1,0 @@
-﻿round_num,start_time,attacker,victim,weapon,is_headshot,unique_key,short_text_neutral,medium_text_neutral,long_text_neutral,priority,event_type
-1,408.640625,ZywOo,tN1R,glock,False,ea9d915f-0737-45ef-b9de-7d8b66630192,ZywOo击杀tN1R,,,6,kill
-1,408.96875,donk,flameZ,usp_silencer,True,6d8c5908-c810-4fd4-a887-ea07c3493d6e,donk击杀flameZ,,,6,kill
-1,409.765625,donk,ZywOo,usp_silencer,True,f83f236b-508e-4f65-8f1c-df360653b911,donk击杀ZywOo,,,6,kill
-1,410.5625,donk,apEX,usp_silencer,True,b6a7c0f1-26fb-4d5d-af40-d7cc6ecf8ce6,donk击杀apEX,,,6,kill
-1,413.796875,sh1ro,ropz,elite,True,293d7850-b838-47e1-b5eb-aa4d89233c61,sh1ro击杀ropz,,,6,kill
-1,416.390625,mezii,donk,glock,True,328461cc-598f-4b04-9f77-d32982b96447,mezii击杀donk,,,6,kill
-1,473.546875,mezii,chopper,glock,False,7db02c52-6af5-4ae5-830b-f85f1792083f,mezii击杀chopper,,,6,kill
-1,474.65625,sh1ro,mezii,elite,True,ca40bfdd-a5e0-4dcd-95be-f97bf6a1aa97,sh1ro击杀mezii,,,6,kill

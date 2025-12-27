@@ -1,4 +1,0 @@
-﻿event_id,round_num,tick,priority,short_text_neutral,medium_text_neutral,long_text_neutral,event_type
-401712fb-370c-4454-8b1c-c5b3ce347e54,1,28032,4,T可能控B，CT防守。,mezii可能控制B区，sh1ro和zweih守A区，chopper直接对位。,,tactical
-d79dcd9f-786e-4d7b-a6f8-6ff9d262436b,1,26112,4,T方中路集结，CT方A区布防。,T方五人集中在中路可能计划进行中路控制或假动作后转向A或B区进攻；CT方三人固守A区，两人中路防守。,,tactical
-45ef5467-b484-4eed-8b44-c99d87009a5a,1,29952,4,T方试探，CT方防守。,mezii可能在B区搜集信息，而CT方集中在B缓冲区准备应对进攻。,,tactical
