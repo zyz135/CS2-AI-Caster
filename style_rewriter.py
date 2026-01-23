@@ -139,7 +139,10 @@ def process_file(csv_path):
     if not MY_API_KEY:
         print("   ❌ 无 API Key")
         return
-    client = OpenAI(api_key=MY_API_KEY, base_url="[https://dashscope.aliyuncs.com/compatible-mode/v1](https://dashscope.aliyuncs.com/compatible-mode/v1)")
+    client = OpenAI(
+    api_key=MY_API_KEY, 
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+)
 
     # 分批处理
     results_map = {}
